@@ -34,39 +34,42 @@
 //  to output 0. And G (Blue) is connect to output 6.
 //  Output 7 is not used.
 // 
-//  A 0000 0001  -- 1
-//  B 0000 0010  -- 2
-//  C 0000 0100  -- 4
-//  D 0000 1000  -- 8
-//  E 0001 0000  -- 16
-//  F 0010 0000  -- 32
-//  G 0100 0000  -- 64
+//  F 0010 0000  -- 1
+//  G 0100 0000  -- 2
+//  UNUSED       -- 4
+//  A 0000 0001  -- 8
+//  B 0000 0010  -- 16
+//  C 0000 0100  -- 32
+//  D 0000 1000  -- 64
+//  E 0001 0000  -- 128
 
 //  Digits are made like this:
-//
-//              GFE DCBA
-//  0  GFE CBA 0111 0111  -- 119d 77h
-//  1   F  C   0010 0100  -- 36d  24h
-//  2  G EDC A 0101 1101  -- 93d  5Dh
-//  3  GF DC A 0110 1101  -- 109d 6Dh
-//  4   F DCB  0010 1110  -- 46d  2Eh
-//  5  GF D BA 0110 1011  -- 107d 6Bh
-//  6  GFED BA 0111 1011  -- 123d 7Bh
-//  7   F  C A 0010 0101  -- 37d  25h
-//  8  GFEDCBA 0111 1111  -- 127d 7Fh
-//  9  GF DCBA 0110 1111  -- 111d 6Fh
+//              1
+//              2631
+//              8426 8421
+//    EDCB A GF EDCB A GF
+//  0 E CB A GF 1011 1011  -- 187d BBh
+//  1   C     F 0010 0001  -- 33d  21h
+//  2 EDC  A G  1110 1010  -- 234d EAh
+//  3  DC  A GF 0110 1011  -- 107d 68h
+//  4  DCB    F 0111 0001  -- 113d 71h
+//  5  D B A GF 0101 1011  -- 91d  5Bh
+//  6 ED B A GF 1101 1011  -- 219d DBh
+//  7   C  A  F 0010 1001  -- 41d  29h
+//  8 EDCB A GF 1111 1011  -- 251d FBh
+//  9  DCB A GF 0111 1011  -- 123d 7Bh
 
 int encodedSsd[] = {
-  119,
-  36,
-  93,
-  109,
-  46,
+  187,
+  33,
+  234,
   107,
-  123,
-  37,
-  127,
-  111
+  113,
+  91,
+  219,
+  41,
+  251,
+  123
 };
 
 #include "Wire.h"
@@ -79,16 +82,19 @@ int clockPin = 11;
 ////Pin connected to SER IN (DS) of TPIC (Pin 18)
 int dataPin = 10;
 
-const int VIS_UP_PIN = 7; //(was 0) orange-white, right side
-const int CLOCK_PIN  = 6; //(was 1) orange, small clock button, press to display the current time
-const int HM_UP_PIN  = 5; //(was 2) green-white, left side 
-const int GND_PIN    = 4; // (was 3) blue
-const int RESET_PIN  = 3; // (was 4) blue-white
-const int HM_DN_PIN  = 2; //(was 5) green, left side
-                          //pin 6 unused, brown-white wire
-const int VIS_DN_PIN = 0; //(was 7) brown, right side
+const int VIS_UP_PIN = 7; // orange-white, right side
+const int CLOCK_PIN  = 6; // orange, small clock button, press to display the current time
+const int HM_UP_PIN  = 5; // green-white, left side 
+const int RESET_PIN  = 4; // brown-white
+const int GND_PIN    = 3; // blue-white. This is hardwired to ground through the shield, so it cannot be changed.
+const int HM_DN_PIN  = 2; // green, left side
+const int UNUSEDPIN1  = 1;// pin 4 unused, blue
+const int VIS_DN_PIN = 0; // brown, right side
 
 const int BUZZER_PIN = 12;
+
+const int BUTTON_RPT_DELAY = 250;
+const int BUTTON_PRESS_BUZZER_LENGTH = 125;
 
 // pins used to power the RTC
 const int RTC_GND_PIN = 18;
@@ -123,13 +129,7 @@ void setup() {
   pinMode(HM_DN_PIN, INPUT_PULLUP);
   pinMode(RESET_PIN, INPUT_PULLUP);
   pinMode(CLOCK_PIN, INPUT_PULLUP);
-
-  //connected to all switches
-  pinMode(GND_PIN, OUTPUT);
-  digitalWrite(GND_PIN, LOW); //provides a ground for the buttons
-
-  //                      left       right
-  DisplayFourDigitScore(homeScore, visScore);
+  pinMode(UNUSEDPIN1, INPUT_PULLUP);
 
   //turn the RTC on
   pinMode(RTC_GND_PIN, OUTPUT);
@@ -139,7 +139,20 @@ void setup() {
   delay(1000);
 
   Wire.begin();
-  Serial.begin(9600); // normally leave commented out
+
+  //connected to all switches
+  //pinMode(GND_PIN, OUTPUT);
+  //digitalWrite(GND_PIN, LOW); //provides a ground for the buttons
+
+  Post();
+
+  //                      left       right
+  DisplayFourDigitScore(homeScore, visScore);
+
+  
+  // I am using pins 0 & 1. If I enable the Serial.begin() line, it will cause
+  // problems with pins 0 & 1.
+  //Serial.begin(9600); // normally leave commented out
 
   // There are two ways to set the time. The easy way is to use
   // the buttons as described further below. Alternatively, you
@@ -156,82 +169,78 @@ void setup() {
   //setDS3231time(0,   17,  21,   6,   1,    4,     16);
 
   lastButtonPress = millis();
+  //SegmentTest(1000);
+  //TestAllCombos(250);
 }
 
 void loop() {
-  Serial.print(digitalRead(VIS_UP_PIN));
-  Serial.print(digitalRead(HM_UP_PIN));
-  Serial.print(digitalRead(VIS_DN_PIN));
-  Serial.print(digitalRead(HM_DN_PIN));
-  Serial.print(digitalRead(RESET_PIN));
-  Serial.println(digitalRead(CLOCK_PIN));
   if(digitalRead(VIS_UP_PIN)==LOW) {
     lastButtonPress = millis();
     clockMode = false;
-    Serial.println("VIS_UP");
+    //Serial.println("VIS_UP");
     visScore++;
     if (visScore>99) {visScore=99;}
     DisplayFourDigitScore(homeScore, visScore);
     digitalWrite(BUZZER_PIN, HIGH);
-    delay(125);
+    delay(BUTTON_PRESS_BUZZER_LENGTH);
     digitalWrite(BUZZER_PIN, LOW);
-    delay(150);
+    delay(BUTTON_RPT_DELAY);
   }
   if(digitalRead(HM_UP_PIN)==LOW) {
     lastButtonPress = millis();
     clockMode = false;
-    Serial.println("HM_UP");
+    //Serial.println("HM_UP");
     homeScore++;
     if (homeScore>99) {homeScore=99;}
     DisplayFourDigitScore(homeScore, visScore);
     digitalWrite(BUZZER_PIN, HIGH);
-    delay(125);
+    delay(BUTTON_PRESS_BUZZER_LENGTH);
     digitalWrite(BUZZER_PIN, LOW);
-    delay(150);
+    delay(BUTTON_RPT_DELAY);
   }  
   if(digitalRead(VIS_DN_PIN)==LOW) {
     lastButtonPress = millis();
     clockMode = false;
-    Serial.println("VIS_DN");
+    //Serial.println("VIS_DN");
     visScore--;
     if (visScore<0) {visScore=0;}
     DisplayFourDigitScore(homeScore, visScore);
     digitalWrite(BUZZER_PIN, HIGH);
-    delay(125);
+    delay(BUTTON_PRESS_BUZZER_LENGTH);
     digitalWrite(BUZZER_PIN, LOW);
-    delay(150);
+    delay(BUTTON_RPT_DELAY);
   }  
   if(digitalRead(HM_DN_PIN)==LOW) {
     lastButtonPress = millis();
     clockMode = false;
-    Serial.println("HM_DN");
+    //Serial.println("HM_DN");
     homeScore--;
     if (homeScore<0) {homeScore=0;}
     DisplayFourDigitScore(homeScore, visScore);
     digitalWrite(BUZZER_PIN, HIGH);
-    delay(125);
+    delay(BUTTON_PRESS_BUZZER_LENGTH);
     digitalWrite(BUZZER_PIN, LOW);
-    delay(150);
+    delay(BUTTON_RPT_DELAY);
   }  
   if(digitalRead(RESET_PIN)==LOW) {
     lastButtonPress = millis();
     clockMode = false;
-    Serial.println("RESET");
+    //Serial.println("RESET BUTTON");
     homeScore=0;
     visScore=0;
     DisplayFourDigitScore(homeScore, visScore);
     digitalWrite(BUZZER_PIN, HIGH);
     delay(750);
     digitalWrite(BUZZER_PIN, LOW);
-    delay(150);
+    delay(BUTTON_RPT_DELAY);
   } 
   if(digitalRead(CLOCK_PIN)==LOW) {
     lastButtonPress = millis();
     clockMode = true;
-    Serial.println("CLOCK");
+    //Serial.println("CLOCK");
     ShowTime();
-    delay(200);
-    /*
+    delay(BUTTON_RPT_DELAY);
+    
     while(digitalRead(CLOCK_PIN)==LOW) {
       if (digitalRead(RESET_PIN)==LOW && digitalRead(VIS_UP_PIN)==LOW) {
         // set the time by setting the score to the desired time using 24 hr
@@ -251,21 +260,21 @@ void loop() {
         delay(2500);
         }
       };
-      */
+      
     //DisplayFourDigitScore(homeScore, visScore);
     //delay(100);
   } 
 
   if (clockMode == true) {
     ShowTime();
-    delay(100);
+    delay(BUTTON_RPT_DELAY);
   }
 
   if (millis() > lastButtonPress + buttonDelay) {
     digitalWrite(BUZZER_PIN, HIGH);
     delay(750);
     digitalWrite(BUZZER_PIN, LOW);
-    delay(150);
+    delay(BUTTON_RPT_DELAY);
 
     // beep once per minute, so add some time to the lastButtonPress time
     lastButtonPress = lastButtonPress + 60000;
@@ -344,44 +353,91 @@ void Flash(int d) {
 }
 
 void Countup(int d) {
-  LightSegments(119); //0
+  LightSegments(encodedSsd[0]); //0
   delay(d);
-  LightSegments(36);  //1
+  LightSegments(encodedSsd[1]);  //1
   delay(d);
-  LightSegments(93);  //2
+  LightSegments(encodedSsd[2]);  //2
   delay(d);
-  LightSegments(109); //3
+  LightSegments(encodedSsd[3]); //3
   delay(d);
-  LightSegments(46);  //4
+  LightSegments(encodedSsd[4]);  //4
   delay(d);
-  LightSegments(107); //5
+  LightSegments(encodedSsd[5]); //5
   delay(d);
-  LightSegments(123); //6
+  LightSegments(encodedSsd[6]); //6
   delay(d);
-  LightSegments(37);  //7
+  LightSegments(encodedSsd[7]);  //7
   delay(d);
-  LightSegments(127);  //8
+  LightSegments(encodedSsd[8]);  //8
   delay(d);
-  LightSegments(111);  //9
+  LightSegments(encodedSsd[9]);  //9
   delay(d);
 }
 
+void TestAllCombos (int d) {
+  int i = 0;
+  for (i = 0; i <= 255; i++) {
+    LightSegments(i);
+    delay(d);
+    if (i==255) 
+    {
+      i = 0;
+    }
+  }
+}
+
+void SegmentTest (int d) {
+  while(1) {
+    //flash all segments so we know we are starting
+    LightSegments(255);  //8
+    delay(100);
+    LightSegments(0);  //8
+    delay(100);
+    LightSegments(255);  //8
+    delay(100);
+    LightSegments(0);  //8
+    delay(100);
+    LightSegments(255);  //8
+    delay(100);
+    LightSegments(0);  //8
+    delay(100);
+
+    // now flash each segment one at a time
+    LightSegments(1);  //8
+    delay(d);
+    LightSegments(2);  //8
+    delay(d);
+    LightSegments(4);  //8
+    delay(d);
+    LightSegments(8);  //8
+    delay(d);
+    LightSegments(16);  //8
+    delay(d);
+    LightSegments(32);  //8
+    delay(d);
+    LightSegments(64);  //8
+    delay(d);
+    LightSegments(128);  //8
+    delay(d);
+  }
+}
+
+
 //Power On Self Test
 void Post() {
-  Spin(1500);
-  Spin(1500);
+  Spin(100);
+  Spin(100);
   TurnAllOff();
   delay(500);
-  Countup(1000);
-  Countup(1000);
-  Countup(1000);
+  Countup(200);
+  Countup(200);
+  Countup(200);
   TurnAllOff();
   delay(500);
   Flash(500);
   Flash(500);
-  TurnAllOn();
-  delay(2000);
-  TurnAllOff();
+  Flash(2000);
 }
 
 void Spin(int d) {
@@ -400,6 +456,8 @@ void Spin(int d) {
   LightSegments(32);
   delay(d);
   LightSegments(64);
+  delay(d);
+  LightSegments(128);
   delay(d);
 }
 
@@ -490,6 +548,9 @@ byte *year)
   *month = bcdToDec(Wire.read());
   *year = bcdToDec(Wire.read());
 }
+
+
+// nothing calls this, which is good because of all of the Seial calls.
 void displayTime()
 {
   Serial.begin(9600);
