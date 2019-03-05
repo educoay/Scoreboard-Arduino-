@@ -140,10 +140,6 @@ void setup() {
 
   Wire.begin();
 
-  //connected to all switches
-  //pinMode(GND_PIN, OUTPUT);
-  //digitalWrite(GND_PIN, LOW); //provides a ground for the buttons
-
   Post();
 
   //                      left       right
@@ -151,7 +147,7 @@ void setup() {
 
   
   // I am using pins 0 & 1. If I enable the Serial.begin() line, it will cause
-  // problems with pins 0 & 1.
+  // problems with pins 0 & 1. Next time don't use pins 0 and 1.
   //Serial.begin(9600); // normally leave commented out
 
   // There are two ways to set the time. The easy way is to use
@@ -270,6 +266,8 @@ void loop() {
     delay(BUTTON_RPT_DELAY);
   }
 
+  // "screensaver" Beep if no buttons have been pressed in a long time.
+  // prevent the batter from running down.
   if (millis() > lastButtonPress + buttonDelay) {
     digitalWrite(BUZZER_PIN, HIGH);
     delay(750);
